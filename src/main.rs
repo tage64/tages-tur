@@ -7,12 +7,15 @@ use axum::{
 };
 use jord::spherical::Sphere;
 use jord::{Angle, LatLong};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::{Arc, LazyLock, Mutex};
+use std::time::Duration;
 use time::Time;
 
 const WEBSIGHT_ADDR: &str = "0.0.0.0:3000";
 const OWNTRACKS_ADDR: &str = "10.68.39.1:1234";
+
+const STATE_FILE: &str = "state.json";
 
 static GOAL: LazyLock<LatLong> = LazyLock::new(|| {
     LatLong::new(
@@ -20,11 +23,11 @@ static GOAL: LazyLock<LatLong> = LazyLock::new(|| {
         Angle::from_degrees(18.067139),
     )
 });
-static RESET_TIME: LazyLock<Time> = LazyLock::new(|| Time::from_hms(22, 32, 0).expect(""));
+static RESET_TIME: LazyLock<Time> = LazyLock::new(|| Time::from_hms(7, 30, 0).expect(""));
 static TIMEZONE: LazyLock<time::UtcOffset> =
     LazyLock::new(|| time::UtcOffset::from_hms(2, 0, 0).unwrap());
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[allow(unused)]
 struct LocationPayload {
     /// Unix epoch timestamp.
@@ -69,7 +72,7 @@ enum Info {
     Error { error: anyhow::Error },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 struct State {
     finished: bool,
     reached_goal: bool,
@@ -88,7 +91,10 @@ async fn main() -> Result<()> {
 
     let state = Arc::new(Mutex::<Option<State>>::new(None));
 
-    tokio::try_join!(websight(state.clone()), owntracks(state))?;
+    tokio::try_join!(websight(state.clone()), owntracks(state.clone()), async {
+        save_state(state).await;
+        Ok(())
+    },)?;
     Ok(())
 }
 
@@ -173,7 +179,7 @@ async fn render_websight(state: &Arc<Mutex<Option<State>>>) -> anyhow::Result<St
             lat: state.loc.lat,
             lon: state.loc.lon,
             vel: state.loc.vel.unwrap_or(0.0),
-            distance: (state.distance / 100.0) / 10.0,
+            distance: (state.distance / 100.0).round() / 10.0,
             goal_lat: GOAL.latitude().as_degrees(),
             goal_lon: GOAL.longitude().as_degrees(),
             distance_to_goal: (Sphere::EARTH
@@ -265,5 +271,20 @@ async fn handle_owntracks(
             last_acc: acc,
             loc,
         });
+    }
+}
+
+async fn save_state(state: Arc<Mutex<Option<State>>>) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let json = if let Some(state) = state.lock().unwrap().as_ref() {
+            let Ok(json) = serde_json::to_string(state) else {
+                continue;
+            };
+            json
+        } else {
+            continue;
+        };
+        std::fs::write(STATE_FILE, json + "\n").ok();
     }
 }

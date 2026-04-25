@@ -140,6 +140,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 dependencies = [
  "powerfmt",
+ "serde_core",
 ]
 
 [[package]]
@@ -275,6 +276,9 @@ name = "jord"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1d018fe6e39a182b148b02124150a4e0c58393743db3c058073104d37c9d7b2"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "libc"
